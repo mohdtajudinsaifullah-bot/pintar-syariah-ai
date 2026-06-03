@@ -316,3 +316,32 @@ Rujuk gaya bahasa dokumen ini:
                     st.download_button("📄 Muat Turun Kertas Kerja (Word)", data=fail_pengurusan_docx, file_name=f"Kertas_Kerja.docx")
 
                 except Exception as e: st.error(f"❌ Ralat Sistem: {e}")
+
+# ==========================================
+# FOOTER HAK CIPTA (HAK MILIK EKSKLUSIF)
+# ==========================================
+footer_html = """
+<style>
+.footer {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    background-color: #0F172A; /* Warna latar belakang gelap */
+    color: #94A3B8; /* Warna tulisan kelabu cair */
+    text-align: center;
+    padding: 12px;
+    font-size: 13px;
+    border-top: 4px solid #1D4ED8; /* Garisan biru kat atas footer */
+    z-index: 999;
+}
+/* Tambah ruang kat bawah supaya butang/teks tak tertutup dengan footer */
+.block-container {
+    padding-bottom: 80px;
+}
+</style>
+<div class="footer">
+    © 2026 AIMS Dibangunkan Oleh pihak UTES. Hak Cipta Terpelihara.
+</div>
+"""
+st.markdown(footer_html, unsafe_allow_html=True)
