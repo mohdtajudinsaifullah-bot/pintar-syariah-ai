@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import time
+import re
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -36,39 +37,57 @@ def cuba_jana_ai(prompt_teks):
                     raise e 
     raise Exception("Pelayan Google sesak. Sila cuba lagi.")
 
-# --- FUNGSI BINA FAIL WORD (VERSION PRO) ---
+# --- FUNGSI BINA FAIL WORD AP (FORMAT MAHKAMAH PRO) ---
 def bina_fail_word(teks_ai, tajuk_dokumen, metadata):
     doc = Document()
     style = doc.styles['Normal']
     style.font.name = 'Arial'
-    style.font.size = Pt(11)
+    style.font.size = Pt(12) # Saiz 12 standard AP
     style.paragraph_format.line_spacing = 1.0
-    style.paragraph_format.space_after = Pt(12) # Jarak antara perenggan
+    style.paragraph_format.space_after = Pt(12)
 
-    # --- 1. KEPALA SURAT (CENTER) ---
+    # --- 1. PEMBINAAN KEPALA SURAT (Format Tepat Image 2) ---
     p1 = doc.add_paragraph()
     p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run1 = p1.add_run(f"{metadata['pihak1']}\nlwn\n{metadata['pihak2']}")
-    run1.bold = True
-    run1.font.size = Pt(12)
+    p1.paragraph_format.space_after = Pt(0)
+    run_p1 = p1.add_run(metadata['pihak1'].upper())
+    run_p1.bold = True
 
     p2 = doc.add_paragraph()
     p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    # Format: [Mahkamah] [Nama Hakim] pada [Tarikh]
-    p2.add_run(f"[{metadata['mahkamah']}, {metadata['hakim']}, pada {metadata['tarikh']}]").italic = True
+    p2.paragraph_format.space_after = Pt(0)
+    run_lwn = p2.add_run("lwn")
+    run_lwn.italic = True
 
     p3 = doc.add_paragraph()
     p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p3.add_run(f"[Kes No: {metadata['nokes']}]")
+    p3.paragraph_format.space_after = Pt(24)
+    run_p3 = p3.add_run(metadata['pihak2'].upper())
+    run_p3.bold = True
 
-    p4 = doc.add_paragraph()
-    p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p4.add_run(f"[Permohonan: {metadata['jenis_p']}]\n[Peguam: {metadata['peguam']}]")
+    # Maklumat Hakim & Tarikh (Rapat Kiri, Tiada Italic)
+    p4 = doc.add_paragraph(f"[{metadata['mahkamah']} {metadata['negeri']}, {metadata['hakim']}, pada {metadata['tarikh']}]")
+    p4.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p4.paragraph_format.space_after = Pt(0) # Tiada jarak enter di bawahnya
     
-    # --- 2. PEMBINAAN KANDUNGAN & PEMBERSIHAN SIMBOL ---
-    # Buang simbol markdown yang user tak nak
-    teks_bersih = teks_ai.replace('**', '').replace('##', '').replace('*', '').replace('>', '').replace('[ ', '[').replace(' ]', ']')
+    # Maklumat Kes & Permohonan (Rapat Kiri)
+    p5 = doc.add_paragraph()
+    p5.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p5.paragraph_format.space_after = Pt(12) # Jarak 1 enter sebelum peguam
+    p5.add_run(f"[Kes No. {metadata['nokes']}]\n[{metadata['jenis_p']}]")
+
+    # Maklumat Peguam (Rapat Kiri)
+    if metadata['peguam']:
+        p6 = doc.add_paragraph(f"Peguam Syarie: {metadata['peguam']}")
+        p6.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p6.paragraph_format.space_after = Pt(24) # Jarak besar sikit sebelum isi AP bermula
+
+    # --- 2. PEMBERSIHAN SAMPAH MARKDOWN AI & HALUSINASI ---
+    teks_bersih = teks_ai.replace('**', '').replace('##', '').replace('#', '').replace('*', '').replace('>', '')
     lines = teks_bersih.split('\n')
+    
+    # Senarai hitam perkataan Kepala Surat yang AI suka ulang
+    senarai_hitam_header = ["DI DALAM MAHKAMAH", "DALAM NEGERI", "ANTARA", "DENGAN", "DI HADAPAN", "PERMOHONAN NO", "ALASAN PENGHAKIMAN"]
     
     i = 0
     while i < len(lines):
@@ -77,41 +96,58 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata):
             i += 1
             continue
 
-        # KESAN JADUAL
-        if line.startswith('|'):
+        # PENAPIS KEBAL: Abaikan jika AI berdegil tulis Kepala Surat berulang
+        if any(line.upper().startswith(haram) for haram in senarai_hitam_header):
+            i += 1
+            continue
+
+        # FORMAT: Tajuk KEPUTUSAN (Center, Bold)
+        if line.upper() == "KEPUTUSAN" or line.upper() == "5. KEPUTUSAN" or line.upper() == "4. KEPUTUSAN":
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(24)
+            run = p.add_run("KEPUTUSAN")
+            run.bold = True
+            
+        # FORMAT: Ayat "SETELAH..." (Bold & Underline perkataan pertama)
+        elif line.upper().startswith("SETELAH"):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            words = line.split(" ", 1)
+            run_setelah = p.add_run(words[0].upper() + " ")
+            run_setelah.bold = True
+            run_setelah.underline = True
+            if len(words) > 1:
+                p.add_run(words[1])
+
+        # FORMAT: Tajuk Utama lain (Kiri, Bold)
+        elif line.upper() in ["PERMOHONAN", "FAKTA KES", "ULASAN MAHKAMAH", "UNDANG-UNDANG YANG DIPAKAI"]:
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(24)
+            run = p.add_run(line.upper())
+            run.bold = True
+            
+        # KESAN JADUAL (Pengecualian untuk Mod 2)
+        elif line.startswith('|'):
             table_data = []
             while i < len(lines) and line.startswith('|'):
                 cells = [c.strip() for c in lines[i].split('|') if c.strip()]
                 if cells: table_data.append(cells)
                 i += 1
                 if i < len(lines): line = lines[i].strip()
-            
             if table_data:
                 table = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                 table.style = 'Table Grid'
                 for r_idx, row_cells in enumerate(table_data):
                     for c_idx, cell_text in enumerate(row_cells):
-                        cell = table.rows[r_idx].cells[c_idx]
-                        cell.text = cell_text.replace('<br>', '\n')
+                        table.rows[r_idx].cells[c_idx].text = cell_text.replace('<br>', '\n')
             continue 
 
-        # KESAN TAJUK UTAMA (PERMOHONAN, FAKTA KES, KEPUTUSAN dsb)
-        seksyen_utama = ["PERMOHONAN", "FAKTA KES", "ULASAN MAHKAMAH", "KEPUTUSAN"]
-        if any(s in line.upper() for s in seksyen_utama):
-            p = doc.add_paragraph()
-            run = p.add_run(line.upper())
-            run.bold = True
-            run.underline = True # Tambah garis bawah untuk tajuk seksyen
-            p.paragraph_format.space_before = Pt(18)
-        
-        # KESAN NOMBOR (1. 2. 3.1)
-        elif any(line.startswith(str(n)+'.') for n in range(1, 30)):
-            p = doc.add_paragraph()
-            run = p.add_run(line)
-            run.bold = True
-        
-        # TEKS BIASA
+        # FORMAT: Teks Biasa (Justify)
         else:
+            # Vakum nombor kurungan seperti [1], [2], [12] di pangkal ayat
+            line = re.sub(r'^\[\d+\]\s*', '', line)
+            
             p = doc.add_paragraph(line)
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
@@ -133,20 +169,19 @@ tab_kes, tab_pengurusan = st.tabs(["🏛️ Mod 1: Analisis Kes Syariah (AP)", "
 # MOD 1: ANALISIS KES (DRAF AP PRO)
 # ==========================================
 with tab_kes:
-    # UBAH SUSUNAN LAJUR: Lajur kiri (1) untuk Meta, Lajur kanan (2) untuk Input
     col_meta, col_input = st.columns([1, 2]) 
     
     with col_meta:
         st.subheader("📋 Maklumat Kes (Metadata)")
         m_negeri = st.selectbox("Bidang Kuasa (Negeri):", ["Selangor", "Wilayah Persekutuan", "Johor", "Perak", "Kedah", "Kelantan", "Terengganu", "Pahang", "Negeri Sembilan", "Melaka", "Pulau Pinang", "Perlis", "Sabah", "Sarawak"])
         m_level = st.selectbox("Hierarki Mahkamah:", ["Mahkamah Rendah Syariah", "Mahkamah Tinggi Syariah", "Mahkamah Rayuan Syariah"])
-        m_hakim = st.text_input("Nama Hakim:", placeholder="Cth: YA Tuan Haji...")
-        m_tarikh = st.text_input("Tarikh Sidang / Keputusan:", placeholder="Cth: 26 Ramadan 1445H / 6 April 2024")
+        m_hakim = st.text_input("Nama Hakim / Panel:", placeholder="Cth: YA Tuan Haji...")
+        m_tarikh = st.text_input("Tarikh Sidang / Keputusan:", placeholder="Cth: 26 Ramadhan 1438H / 21 Jun 2017")
         m_nokes = st.text_input("No. Kes:", placeholder="Cth: 10000-003-0001-2024")
         m_pihak1 = st.text_area("Pihak 1 (Plaintif/Pemohon):", height=70)
         m_pihak2 = st.text_area("Pihak 2 (Defendan/Responden):", height=70)
-        m_jenis = st.text_input("Jenis Permohonan:", placeholder="Cth: Pengesahan Lafaz Cerai")
-        m_peguam = st.text_input("Nama Peguam (Jika ada):")
+        m_jenis = st.text_area("Jenis Permohonan (Peruntukan):", placeholder="Cth: Permohonan Semakan di bawah seksyen 68...", height=70)
+        m_peguam = st.text_input("Nama Peguam (Jika ada):", placeholder="Cth: Mohd. Faiz b. Adnan...")
 
     with col_input:
         st.subheader("📝 Ringkasan Fakta & Seksyen Utama")
@@ -159,47 +194,53 @@ with tab_kes:
             if f_fakta.strip() == "":
                 st.warning("⚠️ Sila masukkan Fakta Kes!")
             else:
-                with st.spinner("AI sedang merangka AP mengikut format rujukan..."):
+                with st.spinner("AI sedang merangka AP mengikut format Mahkamah..."):
                     try:
-                        # RAG Retrieval
                         embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
                         db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
                         retriever = db.as_retriever(search_kwargs={"k": 5})
                         dokumen_relevan = retriever.invoke(f_fakta)
                         konteks = "\n".join([d.page_content for d in dokumen_relevan])
 
-                        # Custom Prompt based on Court Hierarchy & State Law
-                        prompt_ap = f"""Anda adalah Penyelidik Undang-Undang Kanan. Tugas anda merangka draf ALASAN PENGHAKIMAN (AP) yang formal.
+                        # Prompt Ketat Anti-Halusinasi & Anti-Capslock
+                        prompt_ap = f"""Anda adalah Penyelidik Undang-Undang Kanan. Tugas anda merangka kandungan ALASAN PENGHAKIMAN (AP).
 
-HIERARKI MAHKAMAH: {m_level}
-BIDANG KUASA UNDANG-UNDANG: {m_negeri}
-NAMA HAKIM: {m_hakim}
-JENIS PERMOHONAN: {m_jenis}
+AMARAN KERAS FORMAT (WAJIB PATUH 100%):
+1. JANGAN tulis Kepala Surat sama sekali (DILARANG menulis "DI DALAM MAHKAMAH...", "ANTARA", "DENGAN", "DI HADAPAN", Nama Hakim, Nama Pihak, No Kes).
+2. Mula draf anda TERUS dengan tajuk: PERMOHONAN
+3. DILARANG menggunakan simbol Markdown (*, >, #, ##).
+4. DILARANG menggunakan kurungan bernombor seperti [1], [2], [3] pada permulaan perenggan.
+5. DILARANG menggunakan HURUF BESAR (ALL CAPS) untuk perenggan huraian. Tulis huraian menggunakan huruf kecil biasa (Sentence case). Huruf besar HANYA untuk 4 tajuk utama di bawah.
+6. JANGAN SESEKALI menyalin maklumat pihak, nama hakim, tarikh, atau no kes daripada Kes Rujukan.
 
-STRUKTUR WAJIB (JANGAN GUNA SIMBOL *, [ ], atau >):
-1. PERMOHONAN: (Tulis draf permohonan. Ringkasan user: {f_permohonan})
-2. FAKTA KES: (Huraikan fakta kronologi secara naratif. Input user: {f_fakta})
-3. ULASAN MAHKAMAH: (Salin PERUNTUKAN UNDANG-UNDANG secara verbatim/asal dari rujukan. Pastikan ia selari dengan undang-undang di negeri {m_negeri}. Beri ulasan undang-undang. Ringkasan user: {f_ulasan})
-4. KEPUTUSAN: (Gunakan laras bahasa hierarki {m_level}. JANGAN guna "Saya", guna "Mahkamah". Ringkasan user: {f_keputusan})
+STRUKTUR KANDUNGAN:
+PERMOHONAN
+(Tulis draf permohonan menggunakan ayat biasa/sentence case. Ringkasan: {f_permohonan})
 
-ARAHAN KHAS:
-- DILARANG guna simbol Markdown (*, >, ##, [ ]).
-- Salin seksyen Enakmen/Undang-undang sebiji macam teks asal rujukan.
-- Bahagian KEPUTUSAN mesti dimulakan dengan ayat: "SETELAH Mahkamah membaca dan meneliti permohonan..."
+FAKTA KES
+(Huraikan fakta menggunakan ayat biasa/sentence case. Input: {f_fakta})
 
-RUJUKAN KES LEPAS:
+ULASAN MAHKAMAH
+(Salin PERUNTUKAN UNDANG-UNDANG verbatim dari rujukan kes bagi negeri {m_negeri}. Ulas menggunakan ayat biasa/sentence case. Ringkasan: {f_ulasan})
+
+KEPUTUSAN
+(Mesti dimulakan dengan ayat: "SETELAH Kami membaca dan meneliti permohonan..." ATAU "SETELAH Mahkamah meneliti...")
+(Guna laras bahasa hierarki {m_level}. Ringkasan: {f_keputusan})
+
+RUJUKAN KES LEPAS (UNTUK PANDUAN UNDANG-UNDANG SAHAJA):
 {konteks}
 """
                         respons = cuba_jana_ai(prompt_ap)
-                        st.write(respons.text)
                         
                         meta_dict = {
-                            'mahkamah': m_level, 'hakim': m_hakim, 'tarikh': m_tarikh, 
+                            'negeri': m_negeri, 'mahkamah': m_level, 'hakim': m_hakim, 'tarikh': m_tarikh, 
                             'nokes': m_nokes, 'pihak1': m_pihak1, 'pihak2': m_pihak2, 
                             'jenis_p': m_jenis, 'peguam': m_peguam
                         }
                         
                         fail_word = bina_fail_word(respons.text, "ALASAN PENGHAKIMAN", meta_dict)
+                        
+                        st.success("✅ Draf selesai dijana! Sila muat turun fail Word di bawah.")
                         st.download_button("📄 Muat Turun AP (Word)", data=fail_word, file_name=f"AP_{m_nokes}.docx")
                     except Exception as e: st.error(f"Ralat: {e}")
 
@@ -207,7 +248,7 @@ RUJUKAN KES LEPAS:
 # MOD 2: KERTAS KERJA PENGURUSAN
 # ==========================================
 with tab_pengurusan:
-    st.info("Gunakan format jadual 3 kolum seperti yang telah ditetapkan sebelum ini.")
+    st.info("Kertas Kerja Pengurusan")
     jenis_kertas = st.selectbox("Jenis Dokumen:", ["Kertas Kerja Bengkel / Program", "Kertas Konsep Arahan Amalan", "Kertas Kerja Bajet"])
     bahagian_unit = st.text_input("1. Bahagian / Unit Penyedia:")
     nama_program = st.text_input("2. Nama Program / Aktiviti:")
@@ -230,13 +271,9 @@ with tab_pengurusan:
                 try:
                     embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
                     db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
-                    
                     retriever = db.as_retriever(search_kwargs={"k": 5, "filter": {"sumber": "Pengurusan"}})
                     dokumen_relevan = retriever.invoke(jenis_kertas)
-                    
-                    konteks_teks = ""
-                    for idx, doc in enumerate(dokumen_relevan):
-                        konteks_teks += f"\n--- CONTOH TEMPLAT {idx+1} ---\n{doc.page_content}\n"
+                    konteks_teks = "\n".join([f"\n--- CONTOH TEMPLAT {idx+1} ---\n{doc.page_content}\n" for idx, doc in enumerate(dokumen_relevan)])
 
                     prompt_pengurusan = f"""Anda adalah Pegawai Tadbir Kanan di JKSM. Jana draf {jenis_kertas} yang rasmi.
 
@@ -250,9 +287,7 @@ PANDUAN STRUKTUR TEKS:
 3. LATAR BELAKANG ({objektif_tambahan})
 4. OBJEKTIF PROGRAM 
 5. BUTIR-BUTIR PROGRAM
-(Tarikh: {tarikh_masa}, Tempat: {tempat_program})
-(Peserta: {maklumat_peserta})
-(Penceramah: {maklumat_penceramah})
+(Tarikh: {tarikh_masa}, Tempat: {tempat_program}, Peserta: {maklumat_peserta}, Penceramah: {maklumat_penceramah})
 6. ANGGARAN PERBELANJAAN
 7. KESIMPULAN / PENUTUP
 
@@ -263,7 +298,7 @@ ARAHAN KRITIKAL PEMBINAAN JADUAL (AMARAN KERAS):
 1. Anda MESTI membina SATU JADUAL SAHAJA di bawah bahagian 6. ANGGARAN PERBELANJAAN.
 2. Jadual tersebut WAJIB mempunyai TEPAT 3 KOLUM.
 3. Nama 3 kolum tersebut WAJIB: | Bil. | Butiran | Jumlah |
-4. JANGAN sesekali membina kolum bernama "Perkara", "Kadar", "Kuantiti", atau "Pengiraan". JIKA ANDA MEMBINA LEBIH DARI 3 KOLUM, ANDA GAGAL.
+4. JANGAN sesekali membina kolum bernama "Perkara", "Kadar", "Kuantiti", atau "Pengiraan".
 5. Masukkan SEMUA butiran pengiraan (cth: 30 orang x RM30) ke dalam kolum "Butiran". Gunakan <br> untuk baris baharu di dalam sel.
 6. Baris terakhir jadual mesti bernama JUMLAH KESELURUHAN.
 
@@ -271,17 +306,13 @@ Rujuk gaya bahasa dokumen ini:
 {konteks_teks}
 """
                     respons = cuba_jana_ai(prompt_pengurusan)
-                    
                     st.divider()
                     st.subheader(f"💡 Hasil Penjanaan Kertas Cadangan AI ({jenis_kertas})")
                     st.write(respons.text)
 
-                    # Dummy meta untuk elak ralat fungsi bina_fail_word
-                    meta_dummy = {'mahkamah':'', 'hakim':'', 'tarikh':'', 'nokes':'', 'pihak1':'', 'pihak2':'', 'jenis_p':'', 'peguam':''}
-                    
+                    meta_dummy = {'mahkamah':'', 'hakim':'', 'tarikh':'', 'nokes':'', 'pihak1':'', 'pihak2':'', 'jenis_p':'', 'peguam':'', 'negeri':''}
                     tajuk_rasmi = f"KERTAS PERMOHONAN KELULUSAN BERBELANJA BAGI\n{nama_program}\nJABATAN KEHAKIMAN SYARIAH MALAYSIA"
                     fail_pengurusan_docx = bina_fail_word(respons.text, tajuk_rasmi, meta_dummy)
-                    
                     st.download_button("📄 Muat Turun Kertas Kerja (Word)", data=fail_pengurusan_docx, file_name=f"Kertas_Kerja.docx")
 
                 except Exception as e: st.error(f"❌ Ralat Sistem: {e}")
