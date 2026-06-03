@@ -124,7 +124,7 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata):
 
 # --- UI STREAMLIT ---
 st.set_page_config(page_title="Pintar Syariah AI", page_icon="⚖️", layout="wide")
-st.title("⚖️ Papan Pemuka Pintar Syariah AI")
+st.title("⚖️ Artificial Intelligence Mahkamah Syariah (AIMS)")
 st.divider()
 
 tab_kes, tab_pengurusan = st.tabs(["🏛️ Mod 1: Analisis Kes Syariah (AP)", "📝 Mod 2: Kertas Kerja Pengurusan"])
@@ -133,10 +133,12 @@ tab_kes, tab_pengurusan = st.tabs(["🏛️ Mod 1: Analisis Kes Syariah (AP)", "
 # MOD 1: ANALISIS KES (DRAF AP PRO)
 # ==========================================
 with tab_kes:
-    col_input, col_meta = st.columns([2, 1])
+    # UBAH SUSUNAN LAJUR: Lajur kiri (1) untuk Meta, Lajur kanan (2) untuk Input
+    col_meta, col_input = st.columns([1, 2]) 
     
     with col_meta:
         st.subheader("📋 Maklumat Kes (Metadata)")
+        m_negeri = st.selectbox("Bidang Kuasa (Negeri):", ["Selangor", "Wilayah Persekutuan", "Johor", "Perak", "Kedah", "Kelantan", "Terengganu", "Pahang", "Negeri Sembilan", "Melaka", "Pulau Pinang", "Perlis", "Sabah", "Sarawak"])
         m_level = st.selectbox("Hierarki Mahkamah:", ["Mahkamah Rendah Syariah", "Mahkamah Tinggi Syariah", "Mahkamah Rayuan Syariah"])
         m_hakim = st.text_input("Nama Hakim:", placeholder="Cth: YA Tuan Haji...")
         m_tarikh = st.text_input("Tarikh Sidang / Keputusan:", placeholder="Cth: 26 Ramadan 1445H / 6 April 2024")
@@ -153,30 +155,31 @@ with tab_kes:
         f_ulasan = st.text_area("Butiran ULASAN MAHKAMAH (Jika ada):")
         f_keputusan = st.text_area("Butiran KEPUTUSAN (Jika ada):")
 
-    if st.button("🔍 Jana Draf Alasan Penghakiman (AP)", type="primary"):
-        if f_fakta.strip() == "":
-            st.warning("⚠️ Sila masukkan Fakta Kes!")
-        else:
-            with st.spinner("AI sedang merangka AP mengikut format rujukan..."):
-                try:
-                    # RAG Retrieval
-                    embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
-                    db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
-                    retriever = db.as_retriever(search_kwargs={"k": 5})
-                    dokumen_relevan = retriever.invoke(f_fakta)
-                    konteks = "\n".join([d.page_content for d in dokumen_relevan])
+        if st.button("🔍 Jana Draf Alasan Penghakiman (AP)", type="primary"):
+            if f_fakta.strip() == "":
+                st.warning("⚠️ Sila masukkan Fakta Kes!")
+            else:
+                with st.spinner("AI sedang merangka AP mengikut format rujukan..."):
+                    try:
+                        # RAG Retrieval
+                        embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+                        db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
+                        retriever = db.as_retriever(search_kwargs={"k": 5})
+                        dokumen_relevan = retriever.invoke(f_fakta)
+                        konteks = "\n".join([d.page_content for d in dokumen_relevan])
 
-                    # Custom Prompt based on Court Hierarchy
-                    prompt_ap = f"""Anda adalah Penyelidik Undang-Undang Kanan. Tugas anda merangka draf ALASAN PENGHAKIMAN (AP) yang formal.
+                        # Custom Prompt based on Court Hierarchy & State Law
+                        prompt_ap = f"""Anda adalah Penyelidik Undang-Undang Kanan. Tugas anda merangka draf ALASAN PENGHAKIMAN (AP) yang formal.
 
 HIERARKI MAHKAMAH: {m_level}
+BIDANG KUASA UNDANG-UNDANG: {m_negeri}
 NAMA HAKIM: {m_hakim}
 JENIS PERMOHONAN: {m_jenis}
 
 STRUKTUR WAJIB (JANGAN GUNA SIMBOL *, [ ], atau >):
 1. PERMOHONAN: (Tulis draf permohonan. Ringkasan user: {f_permohonan})
 2. FAKTA KES: (Huraikan fakta kronologi secara naratif. Input user: {f_fakta})
-3. ULASAN MAHKAMAH: (Salin PERUNTUKAN UNDANG-UNDANG secara verbatim/asal dari rujukan. Beri ulasan undang-undang. Ringkasan user: {f_ulasan})
+3. ULASAN MAHKAMAH: (Salin PERUNTUKAN UNDANG-UNDANG secara verbatim/asal dari rujukan. Pastikan ia selari dengan undang-undang di negeri {m_negeri}. Beri ulasan undang-undang. Ringkasan user: {f_ulasan})
 4. KEPUTUSAN: (Gunakan laras bahasa hierarki {m_level}. JANGAN guna "Saya", guna "Mahkamah". Ringkasan user: {f_keputusan})
 
 ARAHAN KHAS:
@@ -187,24 +190,24 @@ ARAHAN KHAS:
 RUJUKAN KES LEPAS:
 {konteks}
 """
-                    respons = cuba_jana_ai(prompt_ap)
-                    st.write(respons.text)
-                    
-                    meta_dict = {
-                        'mahkamah': m_level, 'hakim': m_hakim, 'tarikh': m_tarikh, 
-                        'nokes': m_nokes, 'pihak1': m_pihak1, 'pihak2': m_pihak2, 
-                        'jenis_p': m_jenis, 'peguam': m_peguam
-                    }
-                    
-                    fail_word = bina_fail_word(respons.text, "ALASAN PENGHAKIMAN", meta_dict)
-                    st.download_button("📄 Muat Turun AP (Word)", data=fail_word, file_name=f"AP_{m_nokes}.docx")
-                except Exception as e: st.error(f"Ralat: {e}")
+                        respons = cuba_jana_ai(prompt_ap)
+                        st.write(respons.text)
+                        
+                        meta_dict = {
+                            'mahkamah': m_level, 'hakim': m_hakim, 'tarikh': m_tarikh, 
+                            'nokes': m_nokes, 'pihak1': m_pihak1, 'pihak2': m_pihak2, 
+                            'jenis_p': m_jenis, 'peguam': m_peguam
+                        }
+                        
+                        fail_word = bina_fail_word(respons.text, "ALASAN PENGHAKIMAN", meta_dict)
+                        st.download_button("📄 Muat Turun AP (Word)", data=fail_word, file_name=f"AP_{m_nokes}.docx")
+                    except Exception as e: st.error(f"Ralat: {e}")
 
 # ==========================================
-# MOD 2: PENJANAAN KERTAS KERJA & KONSEP
+# MOD 2: KERTAS KERJA PENGURUSAN
 # ==========================================
 with tab_pengurusan:
-    st.subheader("📝 Borang Maklumat Kertas Kerja / Kertas Konsep")
+    st.info("Gunakan format jadual 3 kolum seperti yang telah ditetapkan sebelum ini.")
     jenis_kertas = st.selectbox("Jenis Dokumen:", ["Kertas Kerja Bengkel / Program", "Kertas Konsep Arahan Amalan", "Kertas Kerja Bajet"])
     bahagian_unit = st.text_input("1. Bahagian / Unit Penyedia:")
     nama_program = st.text_input("2. Nama Program / Aktiviti:")
@@ -264,12 +267,6 @@ ARAHAN KRITIKAL PEMBINAAN JADUAL (AMARAN KERAS):
 5. Masukkan SEMUA butiran pengiraan (cth: 30 orang x RM30) ke dalam kolum "Butiran". Gunakan <br> untuk baris baharu di dalam sel.
 6. Baris terakhir jadual mesti bernama JUMLAH KESELURUHAN.
 
-CONTOH JADUAL YANG BETUL:
-| Bil. | Butiran | Jumlah |
-|---|---|---|
-| 1. | BAYARAN ELAUN PENCERAMAH<br>RM90.00 x 7 jam = RM630.00 | RM630.00 |
-| | JUMLAH KESELURUHAN | RM630.00 |
-
 Rujuk gaya bahasa dokumen ini:
 {konteks_teks}
 """
@@ -279,8 +276,11 @@ Rujuk gaya bahasa dokumen ini:
                     st.subheader(f"💡 Hasil Penjanaan Kertas Cadangan AI ({jenis_kertas})")
                     st.write(respons.text)
 
+                    # Dummy meta untuk elak ralat fungsi bina_fail_word
+                    meta_dummy = {'mahkamah':'', 'hakim':'', 'tarikh':'', 'nokes':'', 'pihak1':'', 'pihak2':'', 'jenis_p':'', 'peguam':''}
+                    
                     tajuk_rasmi = f"KERTAS PERMOHONAN KELULUSAN BERBELANJA BAGI\n{nama_program}\nJABATAN KEHAKIMAN SYARIAH MALAYSIA"
-                    fail_pengurusan_docx = bina_fail_word(respons.text, tajuk_rasmi)
+                    fail_pengurusan_docx = bina_fail_word(respons.text, tajuk_rasmi, meta_dummy)
                     
                     st.download_button("📄 Muat Turun Kertas Kerja (Word)", data=fail_pengurusan_docx, file_name=f"Kertas_Kerja.docx")
 
