@@ -21,7 +21,7 @@ FOLDERS = {
 }
 
 DB_DIR = "./database_vektor_google"
-LOG_FILE = "rekod_fail_diproses.txt" # Fail untuk ingat PDF mana dah dibaca
+LOG_FILE = "rekod_fail_diproses.txt"
 
 def dapatkan_rekod():
     if not os.path.exists(LOG_FILE): return set()
@@ -33,7 +33,7 @@ def simpan_rekod(filename):
         f.write(filename + "\n")
 
 def proses_dan_simpan():
-    print("🤖 Memulakan Robot Penyerapan Data Google Drive...")
+    print("🤖 Memulakan Robot Penyerapan X-Ray Google Drive...")
     embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
     db = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, chunk_overlap=300)
@@ -47,34 +47,36 @@ def proses_dan_simpan():
             print(f"⚠️ Abaikan: Folder '{folder_name}' tidak dijumpai.")
             continue
             
-        for fail in os.listdir(folder_path):
-            if fail.lower().endswith(".pdf"):
-                fail_path = os.path.join(folder_path, fail)
-                
-                # Semak kalau fail ni dah pernah diserap sebelum ni
-                if fail_path in rekod_lama:
-                    continue 
-                
-                print(f"📥 Mengekstrak fail baharu: {fail} (Kategori: {kategori})")
-                try:
-                    loader = PyPDFLoader(fail_path)
-                    documents = loader.load()
+        # Guna os.walk untuk SELAM ke dalam semua sub-folder (cth: Selangor, Perak)
+        for root, dirs, files in os.walk(folder_path):
+            for fail in files:
+                if fail.lower().endswith(".pdf"):
+                    fail_path = os.path.join(root, fail)
                     
-                    for doc in documents:
-                        doc.metadata['sumber'] = kategori
+                    # Semak kalau fail ni dah pernah diserap
+                    if fail_path in rekod_lama:
+                        continue 
+                    
+                    print(f"📥 Menyedut fail baharu: {fail} (Kategori: {kategori})")
+                    try:
+                        loader = PyPDFLoader(fail_path)
+                        documents = loader.load()
                         
-                    chunks = text_splitter.split_documents(documents)
-                    db.add_documents(chunks)
-                    
-                    simpan_rekod(fail_path) # Cop fail ni sebagai 'Selesai'
-                    ada_data_baru = True
-                except Exception as e:
-                    print(f"❌ Gagal membaca {fail}: {e}")
+                        for doc in documents:
+                            doc.metadata['sumber'] = kategori
+                            
+                        chunks = text_splitter.split_documents(documents)
+                        db.add_documents(chunks)
+                        
+                        simpan_rekod(fail_path)
+                        ada_data_baru = True
+                    except Exception as e:
+                        print(f"❌ Gagal membaca {fail}: {e}")
 
     if ada_data_baru:
         print("\n✅ Pangkalan data vektor berjaya dikemas kini dengan fail baharu!")
     else:
-        print("\n💤 Tiada fail PDF baharu dijumpai dalam Google Drive. Pangkalan data dikekalkan.")
+        print("\n💤 Tiada fail PDF baharu dijumpai. Pangkalan data dikekalkan.")
 
 if __name__ == "__main__":
     proses_dan_simpan()
