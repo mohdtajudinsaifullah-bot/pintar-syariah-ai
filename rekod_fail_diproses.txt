@@ -180,3 +180,4 @@ G:\My Drive\JKSM\BPKR\MyAIGeneratorSistem\Data Undang-Undang (Enakmen Akta)\Sela
 G:\My Drive\JKSM\BPKR\MyAIGeneratorSistem\Data Undang-Undang (Enakmen Akta)\Akta keterangan\AktaKeterangan WilayahPersekutuan.pdf
 G:\My Drive\JKSM\BPKR\MyAIGeneratorSistem\Data Undang-Undang (Enakmen Akta)\Akta keterangan\EnakmenKeterangan Johor.pdf
 G:\My Drive\JKSM\BPKR\MyAIGeneratorSistem\Data Undang-Undang (Enakmen Akta)\Akta keterangan\EnakmenKeterangan PulauPinang.pdf
+G:\My Drive\JKSM\BPKR\MyAIGeneratorSistem\Data Undang-Undang (Enakmen Akta)\Akta keterangan\EnakmenKeterangan Selangor.pdf
