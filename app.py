@@ -7,7 +7,7 @@ import time
 import re
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from google import genai
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
