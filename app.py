@@ -8,7 +8,7 @@ import time
 import re
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from google import genai
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -27,7 +27,6 @@ os.environ["GOOGLE_API_KEY"] = api_key_google
 # --- FUNGSI AUTO-RETRY ---
 def cuba_jana_ai(prompt_teks):
     client = genai.Client(api_key=api_key_google)
-    # Guna nama model rasmi Google yang wujud sahaja
     senarai_model = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"] 
     max_cuba = 3 
     for cubaan in range(max_cuba):
@@ -199,11 +198,11 @@ with tab_kes:
             else:
                 with st.spinner("AI sedang merangka AP mengikut format Mahkamah..."):
                     try:
-                        # Kunci Penyelesaian _type ada di sini!
-                        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key_google)
+                        # PENYELESAIAN '_type': Bypass orang tengah, guna raw similarity_search
+                        embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001", google_api_key=api_key_google)
                         db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
-                        retriever = db.as_retriever(search_kwargs={"k": 5})
-                        dokumen_relevan = retriever.invoke(f_fakta)
+                        
+                        dokumen_relevan = db.similarity_search(f_fakta, k=5)
                         konteks = "\n".join([d.page_content for d in dokumen_relevan])
 
                         prompt_ap = f"""Anda adalah Penyelidik Undang-Undang Kanan. Tugas anda merangka kandungan ALASAN PENGHAKIMAN (AP).
@@ -286,13 +285,13 @@ with tab_pengurusan:
         else:
             with st.spinner(f"Menyusun format {jenis_kertas} rasmi..."):
                 try:
-                    # Kunci Penyelesaian _type ada di sini juga!
-                    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key_google)
+                    # PENYELESAIAN '_type': Bypass orang tengah, guna raw similarity_search
+                    embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001", google_api_key=api_key_google)
                     db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
                     
                     filter_kategori = "Arahan Amalan" if jenis_kertas == "Kertas Konsep Arahan Amalan" else "Pengurusan"
-                    retriever = db.as_retriever(search_kwargs={"k": 5, "filter": {"sumber": filter_kategori}})
-                    dokumen_relevan = retriever.invoke(nama_program)
+                    
+                    dokumen_relevan = db.similarity_search(nama_program, k=5, filter={"sumber": filter_kategori})
                     konteks_teks = "\n".join([f"\n--- CONTOH TEMPLAT {idx+1} ---\n{doc.page_content}\n" for idx, doc in enumerate(dokumen_relevan)])
 
                     if jenis_kertas == "Kertas Konsep Arahan Amalan":
