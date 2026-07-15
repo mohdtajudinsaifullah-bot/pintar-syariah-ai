@@ -3,7 +3,7 @@ python-dotenv
 langchain-google-genai
 langchain-community
 langchain-chroma
-chromadb==0.4.24
+chromadb
 pysqlite3-binary
 google-genai
 python-docx
