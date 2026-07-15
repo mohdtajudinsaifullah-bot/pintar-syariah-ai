@@ -1,13 +1,14 @@
 __import__('pysqlite3')
 import sys
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import streamlit as st
 import os
 import time
 import re
 from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from google import genai
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -26,7 +27,8 @@ os.environ["GOOGLE_API_KEY"] = api_key_google
 # --- FUNGSI AUTO-RETRY ---
 def cuba_jana_ai(prompt_teks):
     client = genai.Client(api_key=api_key_google)
-    senarai_model = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-3.1-flash-lite"] 
+    # Guna nama model rasmi Google yang wujud sahaja
+    senarai_model = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"] 
     max_cuba = 3 
     for cubaan in range(max_cuba):
         for model_ai in senarai_model:
@@ -38,24 +40,23 @@ def cuba_jana_ai(prompt_teks):
                 if "503" in ralat or "429" in ralat:
                     time.sleep(5) 
                     continue 
-                elif "404" in ralat:
+                elif "404" in ralat or "not found" in ralat.lower():
                     continue 
                 else:
                     raise e 
-    raise Exception("Pelayan Google sesak. Sila cuba lagi.")
+    raise Exception("Pelayan Google sesak atau model tidak dijumpai. Sila cuba lagi.")
 
 # --- FUNGSI BINA FAIL WORD AP & PENGURUSAN ---
 def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_arahan_amalan=False):
     doc = Document()
     style = doc.styles['Normal']
     style.font.name = 'Arial'
-    style.font.size = Pt(12) # Saiz 12 standard AP
+    style.font.size = Pt(12) 
     style.paragraph_format.line_spacing = 1.0
     style.paragraph_format.space_after = Pt(12)
 
     # --- 1. PEMBINAAN KEPALA SURAT ---
     if not is_pengurusan:
-        # Format Khas Alasan Penghakiman (AP)
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p1.paragraph_format.space_after = Pt(0)
@@ -88,7 +89,6 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_ara
             p6.alignment = WD_ALIGN_PARAGRAPH.LEFT
             p6.paragraph_format.space_after = Pt(24)
     else:
-        # Format Khas Kertas Kerja / Kertas Konsep
         p_tajuk = doc.add_paragraph()
         p_tajuk.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_tajuk.paragraph_format.space_after = Pt(24)
@@ -112,7 +112,6 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_ara
             i += 1
             continue
 
-        # FORMAT: Tajuk KEPUTUSAN (Center, Bold)
         if line.upper() == "KEPUTUSAN" or line.upper() == "5. KEPUTUSAN" or line.upper() == "4. KEPUTUSAN":
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -120,7 +119,6 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_ara
             run = p.add_run("KEPUTUSAN")
             run.bold = True
             
-        # FORMAT: Ayat "SETELAH..." (Bold & Underline perkataan pertama)
         elif line.upper().startswith("SETELAH") and not is_pengurusan:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -131,14 +129,12 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_ara
             if len(words) > 1:
                 p.add_run(words[1])
 
-        # FORMAT: Tajuk Utama (Kiri, Bold) - Termasuk tajuk Arahan Amalan
         elif line.upper() in ["PERMOHONAN", "FAKTA KES", "ULASAN MAHKAMAH", "UNDANG-UNDANG YANG DIPAKAI"] or re.match(r'^\d+\.\s+[A-Z\s]+$', line.upper()):
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(24)
             run = p.add_run(line.upper())
             run.bold = True
             
-        # KESAN JADUAL (Pengecualian untuk Mod 2 - Arahan Amalan TIDAK perlukan jadual)
         elif line.startswith('|') and not is_arahan_amalan:
             table_data = []
             while i < len(lines) and line.startswith('|'):
@@ -154,12 +150,10 @@ def bina_fail_word(teks_ai, tajuk_dokumen, metadata, is_pengurusan=False, is_ara
                         table.rows[r_idx].cells[c_idx].text = cell_text.replace('<br>', '\n')
             continue 
 
-        # FORMAT: Teks Biasa (Justify)
         else:
             line = re.sub(r'^\[\d+\]\s*', '', line)
             p = doc.add_paragraph(line)
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-
         i += 1
             
     buffer = BytesIO()
@@ -205,7 +199,8 @@ with tab_kes:
             else:
                 with st.spinner("AI sedang merangka AP mengikut format Mahkamah..."):
                     try:
-                        embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+                        # Kunci Penyelesaian _type ada di sini!
+                        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key_google)
                         db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
                         retriever = db.as_retriever(search_kwargs={"k": 5})
                         dokumen_relevan = retriever.invoke(f_fakta)
@@ -259,7 +254,6 @@ with tab_pengurusan:
     st.info("Kertas Kerja Pengurusan & Kertas Konsep Arahan Amalan")
     jenis_kertas = st.selectbox("Jenis Dokumen:", ["Kertas Kerja Bengkel / Program", "Kertas Kerja Bajet", "Kertas Konsep Arahan Amalan"])
     
-    # BORANG PINTAR: Borang berubah mengikut pilihan Jenis Kertas
     if jenis_kertas == "Kertas Konsep Arahan Amalan":
         bahagian_unit = st.text_input("1. Bahagian / Unit Penyedia:", value="Bahagian Dasar & Penyelidikan (BPKR)")
         nama_program = st.text_input("2. Tajuk Kertas Konsep:", placeholder="Cth: Penangguhan Kes Atas Alasan Sijil Cuti Sakit")
@@ -273,7 +267,6 @@ with tab_pengurusan:
         cadangan_syor = st.text_area("5. Cadangan & Syor:", height=100)
         
     else:
-        # Borang Lama Untuk Bajet & Program
         bahagian_unit = st.text_input("1. Bahagian / Unit Penyedia:")
         nama_program = st.text_input("2. Nama Program / Aktiviti:")
         tarikh_masa = st.text_input("3. Tarikh, Masa & Tempoh:")
@@ -293,16 +286,15 @@ with tab_pengurusan:
         else:
             with st.spinner(f"Menyusun format {jenis_kertas} rasmi..."):
                 try:
-                    embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+                    # Kunci Penyelesaian _type ada di sini juga!
+                    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=api_key_google)
                     db = Chroma(persist_directory="./database_vektor_google", embedding_function=embeddings)
                     
-                    # Semak sumber carian vektor yang tepat
                     filter_kategori = "Arahan Amalan" if jenis_kertas == "Kertas Konsep Arahan Amalan" else "Pengurusan"
                     retriever = db.as_retriever(search_kwargs={"k": 5, "filter": {"sumber": filter_kategori}})
                     dokumen_relevan = retriever.invoke(nama_program)
                     konteks_teks = "\n".join([f"\n--- CONTOH TEMPLAT {idx+1} ---\n{doc.page_content}\n" for idx, doc in enumerate(dokumen_relevan)])
 
-                    # PROMPT PINTAR: Berubah mengikut jenis borang
                     if jenis_kertas == "Kertas Konsep Arahan Amalan":
                         prompt_pengurusan = f"""Anda adalah Penyelidik Kanan Jabatan Kehakiman Syariah Malaysia. Bina draf Kertas Konsep Arahan Amalan yang rasmi.
 
@@ -363,7 +355,6 @@ Rujuk gaya bahasa dokumen ini:
 
                     meta_dummy = {'mahkamah':'', 'hakim':'', 'tarikh':'', 'nokes':'', 'pihak1':'', 'pihak2':'', 'jenis_p':'', 'peguam':'', 'negeri':''}
                     
-                    # LOGIK TAJUK DOKUMEN DALAM WORD
                     is_aa = (jenis_kertas == "Kertas Konsep Arahan Amalan")
                     tajuk_rasmi = f"KERTAS KONSEP ARAHAN AMALAN\n{nama_program.upper()}" if is_aa else f"KERTAS PERMOHONAN KELULUSAN BERBELANJA BAGI\n{nama_program.upper()}\nJABATAN KEHAKIMAN SYARIAH MALAYSIA"
                     
@@ -382,12 +373,12 @@ footer_html = """
     left: 0;
     bottom: 0;
     width: 100%;
-    background-color: #0F172A; /* Warna latar belakang gelap */
-    color: #94A3B8; /* Warna tulisan kelabu cair */
+    background-color: #0F172A;
+    color: #94A3B8;
     text-align: center;
     padding: 12px;
     font-size: 13px;
-    border-top: 4px solid #1D4ED8; /* Garisan biru kat atas footer */
+    border-top: 4px solid #1D4ED8;
     z-index: 999;
 }
 .block-container { padding-bottom: 80px; }
